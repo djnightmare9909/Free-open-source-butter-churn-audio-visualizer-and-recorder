@@ -1,0 +1,8 @@
+{
+  "name": "Milkdrop Visualizer",
+  "description": "Upload an MP3 and generate custom video visualizers using Butterchurn (Milkdrop) math.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
