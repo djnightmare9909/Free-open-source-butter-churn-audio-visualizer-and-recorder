@@ -1,6 +1,6 @@
 {
   "name": "Milkdrop Visualizer",
-  "description": "Upload an MP3 and generate custom video visualizers using Butterchurn (Milkdrop) math.",
+  "description": "Free, browser-based Milkdrop visualizer with audio playback and built-in video recording. No subscriptions, no cloud—just stunning reactive visuals.",
   "requestFramePermissions": [],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
