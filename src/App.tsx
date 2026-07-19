@@ -9,12 +9,15 @@ export default function App() {
   const visualizerContainerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
+  const customPresetInputRef = useRef<HTMLInputElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   
   const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
   const [visualizer, setVisualizer] = useState<any>(null);
   const [presets, setPresets] = useState<Record<string, any>>({});
   const [presetKeys, setPresetKeys] = useState<string[]>([]);
+  const [customPresets, setCustomPresets] = useState<Record<string, any>>({});
+  const [customPresetKeys, setCustomPresetKeys] = useState<string[]>([]);
   const [activePresetName, setActivePresetName] = useState<string>('');
   
   const nextBlendTimeRef = useRef<number>(2.0);
@@ -62,7 +65,10 @@ export default function App() {
   const navigatePreset = (direction: 'left' | 'right', isHardCut: boolean) => {
     const blendTime = isHardCut ? 0.0 : 2.0;
     
-    if (presetKeys.length === 0) return;
+    const isCustom = customPresetKeys.includes(activePresetName);
+    const keys = isCustom ? customPresetKeys : presetKeys;
+
+    if (keys.length === 0) return;
 
     if (direction === 'left') {
       if (presetHistoryRef.current.length > 1) {
@@ -72,17 +78,17 @@ export default function App() {
         setActivePresetName(prev);
         return;
       } else {
-        const currentIndex = presetKeys.indexOf(activePresetName);
-        const prevIndex = currentIndex <= 0 ? presetKeys.length - 1 : currentIndex - 1;
-        setPreset(presetKeys[prevIndex], blendTime);
+        const currentIndex = keys.indexOf(activePresetName);
+        const prevIndex = currentIndex <= 0 ? keys.length - 1 : currentIndex - 1;
+        setPreset(keys[prevIndex], blendTime);
         return;
       }
     }
 
     // Sequential right navigation
-    const currentIndex = presetKeys.indexOf(activePresetName);
-    const nextIndex = currentIndex >= presetKeys.length - 1 ? 0 : currentIndex + 1;
-    setPreset(presetKeys[nextIndex], blendTime);
+    const currentIndex = keys.indexOf(activePresetName);
+    const nextIndex = currentIndex >= keys.length - 1 || currentIndex === -1 ? 0 : currentIndex + 1;
+    setPreset(keys[nextIndex], blendTime);
   };
 
   // Initialize AudioContext and Visualizer on first user interaction
@@ -116,11 +122,12 @@ export default function App() {
 
   // Handle Preset Change
   useEffect(() => {
-    if (visualizer && activePresetName && presets[activePresetName]) {
-      visualizer.loadPreset(presets[activePresetName], nextBlendTimeRef.current);
+    const preset = presets[activePresetName] || customPresets[activePresetName];
+    if (visualizer && activePresetName && preset) {
+      visualizer.loadPreset(preset, nextBlendTimeRef.current);
       nextBlendTimeRef.current = 2.0; // reset to default
     }
-  }, [activePresetName, visualizer, presets]);
+  }, [activePresetName, visualizer, presets, customPresets]);
 
   // Handle File Upload
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -187,6 +194,41 @@ export default function App() {
     }
   };
 
+  const handleCustomPresetUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from((e.target.files as FileList) || []) as File[];
+    if (files.length === 0) return;
+    
+    let converter: any;
+    try {
+      const converterModule = await import('milkdrop-preset-converter');
+      converter = converterModule.default || converterModule;
+    } catch (err) {
+      console.error("Failed to load converter", err);
+      return;
+    }
+
+    const newCustomPresets = { ...customPresets };
+    for (const file of files) {
+      if (file.name.toLowerCase().endsWith('.milk')) {
+        try {
+          const text = await file.text();
+          const json = await converter.convertPreset(text);
+          newCustomPresets[file.name] = json;
+        } catch (err) {
+          console.error(`Failed to parse preset ${file.name}:`, err);
+        }
+      }
+    }
+    
+    setCustomPresets(newCustomPresets);
+    const keys = Object.keys(newCustomPresets);
+    setCustomPresetKeys(keys);
+    
+    if (keys.length > 0 && !customPresetKeys.includes(activePresetName)) {
+      setPreset(keys[keys.length - 1], 2.0);
+    }
+  };
+
   const nextTrack = () => {
     if (currentTrackIndex < playlist.length - 1) {
       const nextIdx = currentTrackIndex + 1;
@@ -215,11 +257,14 @@ export default function App() {
     
     if (autoPresetEnabled && isPlaying) {
       interval = setInterval(() => {
-        if (presetKeys.length > 0) {
-          const latestPreset = presetHistoryRef.current[presetHistoryRef.current.length - 1] || presetKeys[0];
-          const currentIndex = presetKeys.indexOf(latestPreset);
-          const nextIndex = currentIndex >= presetKeys.length - 1 ? 0 : currentIndex + 1;
-          const nextPreset = presetKeys[nextIndex];
+        const isCustom = customPresetKeys.includes(activePresetName);
+        const keys = isCustom ? customPresetKeys : presetKeys;
+
+        if (keys.length > 0) {
+          const latestPreset = presetHistoryRef.current[presetHistoryRef.current.length - 1] || keys[0];
+          const currentIndex = keys.indexOf(latestPreset);
+          const nextIndex = currentIndex >= keys.length - 1 || currentIndex === -1 ? 0 : currentIndex + 1;
+          const nextPreset = keys[nextIndex];
           
           nextBlendTimeRef.current = 2.0;
           if (presetHistoryRef.current[presetHistoryRef.current.length - 1] !== nextPreset) {
@@ -233,7 +278,7 @@ export default function App() {
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [autoPresetEnabled, autoPresetSeconds, isPlaying, presetKeys]);
+  }, [autoPresetEnabled, autoPresetSeconds, isPlaying, presetKeys, customPresetKeys, activePresetName]);
 
   // Render loop
   const render = useCallback(() => {
@@ -510,21 +555,33 @@ export default function App() {
                    </div>
                 </div>
 
-                <div className="space-y-3">
-                  <button
-                    onClick={() => navigatePreset('right', false)}
-                    className="w-full flex items-center justify-center gap-2 bg-indigo-500/10 active:bg-indigo-500/20 text-indigo-400 transition-colors px-4 py-4 rounded-2xl text-sm font-bold tracking-wide border border-indigo-500/20 shadow-sm"
-                  >
-                    <ChevronRight className="w-5 h-5" />
-                    Next Preset
-                  </button>
+                <div className="space-y-3 pt-4 border-t border-white/5">
+                  <h4 className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest text-center">Presets</h4>
+                  
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => navigatePreset('right', false)}
+                      className="flex-1 flex items-center justify-center gap-2 bg-indigo-500/10 active:bg-indigo-500/20 text-indigo-400 transition-colors px-4 py-4 rounded-2xl text-sm font-bold tracking-wide border border-indigo-500/20 shadow-sm"
+                    >
+                      <ChevronRight className="w-5 h-5" />
+                      Next Preset
+                    </button>
+                    <button
+                      onClick={() => customPresetInputRef.current?.click()}
+                      className="flex-1 flex items-center justify-center gap-2 bg-indigo-500/10 active:bg-indigo-500/20 text-indigo-400 transition-colors px-4 py-4 rounded-2xl text-sm font-bold tracking-wide border border-indigo-500/20 shadow-sm"
+                    >
+                      <Upload className="w-5 h-5" />
+                      Upload .milk
+                    </button>
+                  </div>
 
                   <div className="relative">
                     <select
-                      value={activePresetName}
-                      onChange={(e) => setPreset(e.target.value, 2.0)}
+                      value={!customPresetKeys.includes(activePresetName) ? activePresetName : ''}
+                      onChange={(e) => { if(e.target.value) setPreset(e.target.value, 2.0); }}
                       className="w-full bg-neutral-900 border border-white/10 rounded-2xl px-4 py-4 text-sm text-white appearance-none focus:outline-none focus:ring-1 focus:ring-indigo-500 pr-10 shadow-sm"
                     >
+                      <option value="" disabled>Select built-in preset...</option>
                       {presetKeys.map(key => (
                         <option key={key} value={key}>
                           {key.replace(/-/g, ' ')}
@@ -535,6 +592,26 @@ export default function App() {
                       <Settings2 className="w-5 h-5" />
                     </div>
                   </div>
+
+                  {customPresetKeys.length > 0 && (
+                    <div className="relative mt-2">
+                      <select
+                        value={customPresetKeys.includes(activePresetName) ? activePresetName : ''}
+                        onChange={(e) => { if(e.target.value) setPreset(e.target.value, 2.0); }}
+                        className="w-full bg-neutral-900 border border-indigo-500/30 rounded-2xl px-4 py-4 text-sm text-indigo-100 appearance-none focus:outline-none focus:ring-1 focus:ring-indigo-500 pr-10 shadow-sm"
+                      >
+                        <option value="" disabled>Select custom uploaded preset...</option>
+                        {customPresetKeys.map(key => (
+                          <option key={key} value={key}>
+                            {key.replace(/-/g, ' ')}
+                          </option>
+                        ))}
+                      </select>
+                      <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-indigo-400">
+                        <Settings2 className="w-5 h-5" />
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div className="pt-6 pb-4 flex items-start gap-3 text-indigo-300/70 text-xs border-t border-white/10">
@@ -560,6 +637,14 @@ export default function App() {
             directory="true"
             multiple
             onChange={handleFolderUpload}
+            className="hidden"
+          />
+          <input
+            type="file"
+            ref={customPresetInputRef}
+            accept=".milk"
+            multiple
+            onChange={handleCustomPresetUpload}
             className="hidden"
           />
           {audioUrl && (
