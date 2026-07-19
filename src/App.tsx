@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import butterchurn from 'butterchurn';
 import butterchurnPresets from 'butterchurn-presets';
+import { parseBlob } from 'music-metadata';
 import { Play, Pause, Upload, Download, Video, StopCircle, RefreshCw, AlertCircle, Maximize, Minimize, ChevronLeft, ChevronRight, SkipBack, SkipForward, Settings2, FolderOpen } from 'lucide-react';
 
 export default function App() {
@@ -78,9 +79,10 @@ export default function App() {
       }
     }
 
-    // Always Random on right navigation
-    const randomPreset = presetKeys[Math.floor(Math.random() * presetKeys.length)];
-    setPreset(randomPreset, blendTime);
+    // Sequential right navigation
+    const currentIndex = presetKeys.indexOf(activePresetName);
+    const nextIndex = currentIndex >= presetKeys.length - 1 ? 0 : currentIndex + 1;
+    setPreset(presetKeys[nextIndex], blendTime);
   };
 
   // Initialize AudioContext and Visualizer on first user interaction
@@ -134,7 +136,7 @@ export default function App() {
     }
   };
 
-  const handleFolderUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFolderUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from((e.target.files as FileList) || []) as File[];
     const audioFiles = files.filter(f => 
       f.type.startsWith('audio/') || 
@@ -145,11 +147,38 @@ export default function App() {
     );
     
     if (audioFiles.length > 0) {
-      audioFiles.sort((a, b) => a.name.localeCompare(b.name));
-      setPlaylist(audioFiles);
+      // Parse metadata for sorting
+      const filesWithMetadata = await Promise.all(
+        audioFiles.map(async (file) => {
+          try {
+            const metadata = await parseBlob(file);
+            return {
+              file,
+              album: metadata.common.album || 'Unknown Album',
+              disc: metadata.common.disk.no || 1,
+              track: metadata.common.track.no || 0,
+            };
+          } catch (err) {
+            console.warn('Could not parse metadata for', file.name);
+            return { file, album: 'Unknown Album', disc: 1, track: 0 };
+          }
+        })
+      );
+
+      // Sort by Album -> Disc -> Track -> Fallback to name
+      filesWithMetadata.sort((a, b) => {
+        if (a.album !== b.album) return a.album.localeCompare(b.album);
+        if (a.disc !== b.disc) return a.disc - b.disc;
+        if (a.track !== b.track) return a.track - b.track;
+        return a.file.name.localeCompare(b.file.name);
+      });
+
+      const sortedAudioFiles = filesWithMetadata.map(f => f.file);
+
+      setPlaylist(sortedAudioFiles);
       setCurrentTrackIndex(0);
       
-      const firstFile = audioFiles[0];
+      const firstFile = sortedAudioFiles[0];
       setAudioFile(firstFile);
       if (audioUrl) URL.revokeObjectURL(audioUrl);
       setAudioUrl(URL.createObjectURL(firstFile));
@@ -180,19 +209,23 @@ export default function App() {
     }
   };
 
-  // Auto Random Preset Timer
+  // Auto Sequential Preset Timer
   useEffect(() => {
     let interval: ReturnType<typeof setInterval>;
     
     if (autoPresetEnabled && isPlaying) {
       interval = setInterval(() => {
         if (presetKeys.length > 0) {
-          const randomPreset = presetKeys[Math.floor(Math.random() * presetKeys.length)];
+          const latestPreset = presetHistoryRef.current[presetHistoryRef.current.length - 1] || presetKeys[0];
+          const currentIndex = presetKeys.indexOf(latestPreset);
+          const nextIndex = currentIndex >= presetKeys.length - 1 ? 0 : currentIndex + 1;
+          const nextPreset = presetKeys[nextIndex];
+          
           nextBlendTimeRef.current = 2.0;
-          if (presetHistoryRef.current[presetHistoryRef.current.length - 1] !== randomPreset) {
-            presetHistoryRef.current.push(randomPreset);
+          if (presetHistoryRef.current[presetHistoryRef.current.length - 1] !== nextPreset) {
+            presetHistoryRef.current.push(nextPreset);
           }
-          setActivePresetName(randomPreset);
+          setActivePresetName(nextPreset);
         }
       }, autoPresetSeconds * 1000);
     }
@@ -446,10 +479,10 @@ export default function App() {
                   )}
                 </div>
 
-                {/* Auto Random Preset Timer */}
+                {/* Auto Sequence Preset Timer */}
                 <div className="space-y-3 pt-4 border-t border-white/5">
                    <div className="flex items-center justify-between">
-                     <h4 className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest">Auto Random Preset</h4>
+                     <h4 className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest">Auto Sequence Preset</h4>
                      <button 
                        onClick={() => setAutoPresetEnabled(!autoPresetEnabled)}
                        className={`w-11 h-6 rounded-full p-1 transition-colors ${autoPresetEnabled ? 'bg-indigo-500' : 'bg-neutral-700'}`}
@@ -472,7 +505,7 @@ export default function App() {
                          onChange={(e) => setAutoPresetSeconds(parseInt(e.target.value))}
                          className="w-full h-2 bg-neutral-800 rounded-lg appearance-none cursor-pointer accent-indigo-500"
                        />
-                       <p className="text-[10px] text-neutral-500 text-center mt-1">Randomly switches preset every {autoPresetSeconds} seconds.</p>
+                       <p className="text-[10px] text-neutral-500 text-center mt-1">Sequentially switches preset every {autoPresetSeconds} seconds.</p>
                      </div>
                    </div>
                 </div>
@@ -482,8 +515,8 @@ export default function App() {
                     onClick={() => navigatePreset('right', false)}
                     className="w-full flex items-center justify-center gap-2 bg-indigo-500/10 active:bg-indigo-500/20 text-indigo-400 transition-colors px-4 py-4 rounded-2xl text-sm font-bold tracking-wide border border-indigo-500/20 shadow-sm"
                   >
-                    <RefreshCw className="w-5 h-5" />
-                    Pick Random Preset
+                    <ChevronRight className="w-5 h-5" />
+                    Next Preset
                   </button>
 
                   <div className="relative">
