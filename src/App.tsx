@@ -101,12 +101,12 @@ export default function App() {
         const viz = butterchurn.default ? butterchurn.default.createVisualizer(ctx, canvasRef.current, {
           width: 800,
           height: 600,
-          pixelRatio: window.devicePixelRatio || 1,
+          pixelRatio: 1, // Fixed: High pixel ratio causes VRAM cache memory leaks and WebGL crashes on certain heavy presets
           textureRatio: 1
         }) : butterchurn.createVisualizer(ctx, canvasRef.current, {
           width: 800,
           height: 600,
-          pixelRatio: window.devicePixelRatio || 1,
+          pixelRatio: 1, // Fixed: Force pixel ratio to 1 to prevent VRAM exhaustion
           textureRatio: 1
         });
         setVisualizer(viz);
@@ -233,6 +233,9 @@ export default function App() {
       a.click();
       URL.revokeObjectURL(url);
       setRecordedChunks([]);
+      
+      // Fixed: Stop all tracks to free up the video encoder and prevent VRAM/memory leaks
+      combinedStream.getTracks().forEach(track => track.stop());
     };
 
     recorder.start();
