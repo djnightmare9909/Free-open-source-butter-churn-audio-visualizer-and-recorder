@@ -1,12 +1,13 @@
 import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import butterchurn from 'butterchurn';
 import butterchurnPresets from 'butterchurn-presets';
-import { Play, Pause, Upload, Download, Video, StopCircle, RefreshCw, AlertCircle, Maximize, Minimize, ChevronLeft, ChevronRight, SkipBack, SkipForward, ListPlus, Trash2, Settings2 } from 'lucide-react';
+import { Play, Pause, Upload, Download, Video, StopCircle, RefreshCw, AlertCircle, Maximize, Minimize, ChevronLeft, ChevronRight, SkipBack, SkipForward, Settings2, FolderOpen } from 'lucide-react';
 
 export default function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const visualizerContainerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   
   const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
@@ -15,16 +16,16 @@ export default function App() {
   const [presetKeys, setPresetKeys] = useState<string[]>([]);
   const [activePresetName, setActivePresetName] = useState<string>('');
   
-  const [isRandomMode, setIsRandomMode] = useState(true);
-  const [presetPlaylist, setPresetPlaylist] = useState<string[]>([]);
-  const [selectedPresetToAdd, setSelectedPresetToAdd] = useState<string>('');
-  
   const nextBlendTimeRef = useRef<number>(2.0);
   const presetHistoryRef = useRef<string[]>([]);
   
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [playlist, setPlaylist] = useState<File[]>([]);
+  const [currentTrackIndex, setCurrentTrackIndex] = useState(0);
+  const [autoPresetEnabled, setAutoPresetEnabled] = useState(false);
+  const [autoPresetSeconds, setAutoPresetSeconds] = useState(15);
   
   const [isRecording, setIsRecording] = useState(false);
   const [recordedChunks, setRecordedChunks] = useState<Blob[]>([]);
@@ -60,8 +61,7 @@ export default function App() {
   const navigatePreset = (direction: 'left' | 'right', isHardCut: boolean) => {
     const blendTime = isHardCut ? 0.0 : 2.0;
     
-    const listToUse = presetPlaylist.length > 0 ? presetPlaylist : presetKeys;
-    if (listToUse.length === 0) return;
+    if (presetKeys.length === 0) return;
 
     if (direction === 'left') {
       if (presetHistoryRef.current.length > 1) {
@@ -71,21 +71,16 @@ export default function App() {
         setActivePresetName(prev);
         return;
       } else {
-        const currentIndex = listToUse.indexOf(activePresetName);
-        const prevIndex = currentIndex <= 0 ? listToUse.length - 1 : currentIndex - 1;
-        setPreset(listToUse[prevIndex], blendTime);
+        const currentIndex = presetKeys.indexOf(activePresetName);
+        const prevIndex = currentIndex <= 0 ? presetKeys.length - 1 : currentIndex - 1;
+        setPreset(presetKeys[prevIndex], blendTime);
         return;
       }
     }
 
-    if (isRandomMode) {
-       const randomPreset = listToUse[Math.floor(Math.random() * listToUse.length)];
-       setPreset(randomPreset, blendTime);
-    } else {
-       const currentIndex = listToUse.indexOf(activePresetName);
-       const nextIndex = currentIndex >= listToUse.length - 1 ? 0 : currentIndex + 1;
-       setPreset(listToUse[nextIndex], blendTime);
-    }
+    // Always Random on right navigation
+    const randomPreset = presetKeys[Math.floor(Math.random() * presetKeys.length)];
+    setPreset(randomPreset, blendTime);
   };
 
   // Initialize AudioContext and Visualizer on first user interaction
@@ -129,6 +124,8 @@ export default function App() {
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      setPlaylist([file]);
+      setCurrentTrackIndex(0);
       setAudioFile(file);
       if (audioUrl) URL.revokeObjectURL(audioUrl);
       const newUrl = URL.createObjectURL(file);
@@ -136,6 +133,74 @@ export default function App() {
       setIsPlaying(false);
     }
   };
+
+  const handleFolderUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    const audioFiles = files.filter(f => 
+      f.type.startsWith('audio/') || 
+      f.name.toLowerCase().endsWith('.mp3') || 
+      f.name.toLowerCase().endsWith('.wav') ||
+      f.name.toLowerCase().endsWith('.flac') ||
+      f.name.toLowerCase().endsWith('.m4a')
+    );
+    
+    if (audioFiles.length > 0) {
+      audioFiles.sort((a, b) => a.name.localeCompare(b.name));
+      setPlaylist(audioFiles);
+      setCurrentTrackIndex(0);
+      
+      const firstFile = audioFiles[0];
+      setAudioFile(firstFile);
+      if (audioUrl) URL.revokeObjectURL(audioUrl);
+      setAudioUrl(URL.createObjectURL(firstFile));
+      setIsPlaying(false);
+      setShowSettings(false);
+    }
+  };
+
+  const nextTrack = () => {
+    if (currentTrackIndex < playlist.length - 1) {
+      const nextIdx = currentTrackIndex + 1;
+      setCurrentTrackIndex(nextIdx);
+      const nextFile = playlist[nextIdx];
+      setAudioFile(nextFile);
+      if (audioUrl) URL.revokeObjectURL(audioUrl);
+      setAudioUrl(URL.createObjectURL(nextFile));
+    }
+  };
+
+  const prevTrack = () => {
+    if (currentTrackIndex > 0) {
+      const prevIdx = currentTrackIndex - 1;
+      setCurrentTrackIndex(prevIdx);
+      const prevFile = playlist[prevIdx];
+      setAudioFile(prevFile);
+      if (audioUrl) URL.revokeObjectURL(audioUrl);
+      setAudioUrl(URL.createObjectURL(prevFile));
+    }
+  };
+
+  // Auto Random Preset Timer
+  useEffect(() => {
+    let interval: ReturnType<typeof setInterval>;
+    
+    if (autoPresetEnabled && isPlaying) {
+      interval = setInterval(() => {
+        if (presetKeys.length > 0) {
+          const randomPreset = presetKeys[Math.floor(Math.random() * presetKeys.length)];
+          nextBlendTimeRef.current = 2.0;
+          if (presetHistoryRef.current[presetHistoryRef.current.length - 1] !== randomPreset) {
+            presetHistoryRef.current.push(randomPreset);
+          }
+          setActivePresetName(randomPreset);
+        }
+      }, autoPresetSeconds * 1000);
+    }
+    
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [autoPresetEnabled, autoPresetSeconds, isPlaying, presetKeys]);
 
   // Render loop
   const render = useCallback(() => {
@@ -318,26 +383,44 @@ export default function App() {
             </div>
 
             {/* Primary Actions Row */}
-            <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center justify-between gap-3 md:gap-4">
                {/* Upload */}
-               <button onClick={() => fileInputRef.current?.click()} className="flex flex-col items-center justify-center w-[72px] h-[72px] rounded-3xl bg-neutral-800 active:bg-neutral-700 text-indigo-400 transition-colors border border-white/5 shadow-md">
-                 <Upload className="w-7 h-7 mb-1" />
-                 <span className="text-[9px] font-bold uppercase tracking-wider text-neutral-400">Load</span>
+               <button onClick={() => fileInputRef.current?.click()} className="flex flex-col items-center justify-center w-[64px] h-[64px] md:w-[72px] md:h-[72px] rounded-3xl bg-neutral-800 active:bg-neutral-700 text-indigo-400 transition-colors border border-white/5 shadow-md shrink-0">
+                 <Upload className="w-6 h-6 md:w-7 md:h-7 mb-1" />
+                 <span className="text-[9px] font-bold uppercase tracking-wider text-neutral-400 hidden md:block">Load</span>
                </button>
                
+               {/* Skip Prev */}
+               <button 
+                 onClick={prevTrack}
+                 disabled={playlist.length <= 1 || currentTrackIndex === 0}
+                 className="flex items-center justify-center w-[52px] h-[64px] md:w-[60px] md:h-[72px] rounded-2xl md:rounded-3xl bg-neutral-800 active:bg-neutral-700 text-neutral-400 disabled:opacity-30 transition-colors border border-white/5 shadow-md shrink-0"
+               >
+                 <SkipBack className="w-5 h-5 md:w-6 md:h-6 fill-current" />
+               </button>
+
                {/* Play/Pause */}
                <button 
                  onClick={togglePlay} 
                  disabled={!audioFile} 
-                 className="flex-1 h-[88px] flex items-center justify-center bg-indigo-500 active:bg-indigo-600 disabled:bg-neutral-800 disabled:text-neutral-600 text-white rounded-[2.5rem] transition-all duration-300 ease-out shadow-[0_8px_30px_rgba(99,102,241,0.3)] active:shadow-none active:scale-95 disabled:scale-100 disabled:shadow-none border border-indigo-400/20"
+                 className="flex-1 h-[72px] md:h-[88px] flex items-center justify-center bg-indigo-500 active:bg-indigo-600 disabled:bg-neutral-800 disabled:text-neutral-600 text-white rounded-[2rem] md:rounded-[2.5rem] transition-all duration-300 ease-out shadow-[0_8px_30px_rgba(99,102,241,0.3)] active:shadow-none active:scale-95 disabled:scale-100 disabled:shadow-none border border-indigo-400/20"
                >
-                 {isPlaying ? <Pause className="w-12 h-12 fill-current" /> : <Play className="w-12 h-12 fill-current ml-2" />}
+                 {isPlaying ? <Pause className="w-10 h-10 md:w-12 md:h-12 fill-current" /> : <Play className="w-10 h-10 md:w-12 md:h-12 fill-current ml-2" />}
+               </button>
+
+               {/* Skip Next */}
+               <button 
+                 onClick={nextTrack}
+                 disabled={playlist.length <= 1 || currentTrackIndex === playlist.length - 1}
+                 className="flex items-center justify-center w-[52px] h-[64px] md:w-[60px] md:h-[72px] rounded-2xl md:rounded-3xl bg-neutral-800 active:bg-neutral-700 text-neutral-400 disabled:opacity-30 transition-colors border border-white/5 shadow-md shrink-0"
+               >
+                 <SkipForward className="w-5 h-5 md:w-6 md:h-6 fill-current" />
                </button>
 
                {/* Record */}
-               <button onClick={toggleRecording} disabled={!audioFile} className={`flex flex-col items-center justify-center w-[72px] h-[72px] rounded-3xl transition-colors border shadow-md ${isRecording ? 'bg-red-500/20 text-red-400 border-red-500/30 active:bg-red-500/30 shadow-[0_0_20px_rgba(239,68,68,0.2)]' : 'bg-neutral-800 text-neutral-400 border-white/5 active:bg-neutral-700 disabled:opacity-50'}`}>
-                 {isRecording ? <StopCircle className="w-7 h-7 mb-1" /> : <Video className="w-7 h-7 mb-1" />}
-                 <span className="text-[9px] font-bold uppercase tracking-wider">{isRecording ? 'Stop' : 'Rec'}</span>
+               <button onClick={toggleRecording} disabled={!audioFile} className={`flex flex-col items-center justify-center w-[64px] h-[64px] md:w-[72px] md:h-[72px] rounded-3xl transition-colors border shadow-md shrink-0 ${isRecording ? 'bg-red-500/20 text-red-400 border-red-500/30 active:bg-red-500/30 shadow-[0_0_20px_rgba(239,68,68,0.2)]' : 'bg-neutral-800 text-neutral-400 border-white/5 active:bg-neutral-700 disabled:opacity-50'}`}>
+                 {isRecording ? <StopCircle className="w-6 h-6 md:w-7 md:h-7 mb-1" /> : <Video className="w-6 h-6 md:w-7 md:h-7 mb-1" />}
+                 <span className="text-[9px] font-bold uppercase tracking-wider hidden md:block">{isRecording ? 'Stop' : 'Rec'}</span>
                </button>
             </div>
           </div>
@@ -346,13 +429,52 @@ export default function App() {
           <div className={`overflow-hidden transition-all duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] ${showSettings ? 'max-h-[50vh] opacity-100' : 'max-h-0 opacity-0'}`}>
              <div className="px-6 pb-8 space-y-6 overflow-y-auto max-h-[50vh] custom-scrollbar border-t border-white/5 pt-6 mt-[-1rem]">
                 
-                {/* Mode Toggle */}
+                {/* Audio Source / Folder */}
                 <div className="space-y-3">
-                  <h4 className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest text-center">Playback Mode</h4>
-                  <div className="flex items-center justify-between bg-black/50 p-1.5 rounded-2xl border border-white/5">
-                     <button onClick={() => setIsRandomMode(false)} className={`flex-1 py-3 text-sm font-semibold rounded-xl transition-all duration-300 ${!isRandomMode ? 'bg-neutral-800 text-white shadow-md border border-white/10' : 'text-neutral-500 active:text-neutral-300 border border-transparent'}`}>Sequential</button>
-                     <button onClick={() => setIsRandomMode(true)} className={`flex-1 py-3 text-sm font-semibold rounded-xl transition-all duration-300 ${isRandomMode ? 'bg-neutral-800 text-white shadow-md border border-white/10' : 'text-neutral-500 active:text-neutral-300 border border-transparent'}`}>Random</button>
-                  </div>
+                  <h4 className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest text-center">Audio Source</h4>
+                  <button 
+                    onClick={() => folderInputRef.current?.click()}
+                    className="w-full flex items-center justify-center gap-2 bg-indigo-500/10 active:bg-indigo-500/20 text-indigo-400 transition-colors px-4 py-4 rounded-2xl text-sm font-bold tracking-wide border border-indigo-500/20 shadow-sm"
+                  >
+                    <FolderOpen className="w-5 h-5" />
+                    Load Audio Folder (Playlist)
+                  </button>
+                  {playlist.length > 1 && (
+                    <p className="text-xs text-center text-indigo-300 font-medium">
+                      Loaded {playlist.length} tracks (Playing {currentTrackIndex + 1} of {playlist.length})
+                    </p>
+                  )}
+                </div>
+
+                {/* Auto Random Preset Timer */}
+                <div className="space-y-3 pt-4 border-t border-white/5">
+                   <div className="flex items-center justify-between">
+                     <h4 className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest">Auto Random Preset</h4>
+                     <button 
+                       onClick={() => setAutoPresetEnabled(!autoPresetEnabled)}
+                       className={`w-11 h-6 rounded-full p-1 transition-colors ${autoPresetEnabled ? 'bg-indigo-500' : 'bg-neutral-700'}`}
+                     >
+                       <div className={`w-4 h-4 rounded-full bg-white transition-transform ${autoPresetEnabled ? 'translate-x-5' : 'translate-x-0'}`} />
+                     </button>
+                   </div>
+                   
+                   <div className={`transition-all duration-300 overflow-hidden ${autoPresetEnabled ? 'max-h-24 opacity-100' : 'max-h-0 opacity-0'}`}>
+                     <div className="flex flex-col gap-2 pt-2">
+                       <div className="flex justify-between text-xs text-neutral-400">
+                         <span>Interval</span>
+                         <span>{autoPresetSeconds}s</span>
+                       </div>
+                       <input 
+                         type="range" 
+                         min="1" 
+                         max="30" 
+                         value={autoPresetSeconds}
+                         onChange={(e) => setAutoPresetSeconds(parseInt(e.target.value))}
+                         className="w-full h-2 bg-neutral-800 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+                       />
+                       <p className="text-[10px] text-neutral-500 text-center mt-1">Randomly switches preset every {autoPresetSeconds} seconds.</p>
+                     </div>
+                   </div>
                 </div>
 
                 <div className="space-y-3">
@@ -361,7 +483,7 @@ export default function App() {
                     className="w-full flex items-center justify-center gap-2 bg-indigo-500/10 active:bg-indigo-500/20 text-indigo-400 transition-colors px-4 py-4 rounded-2xl text-sm font-bold tracking-wide border border-indigo-500/20 shadow-sm"
                   >
                     <RefreshCw className="w-5 h-5" />
-                    {isRandomMode ? 'Pick Random Preset' : 'Next Preset'}
+                    Pick Random Preset
                   </button>
 
                   <div className="relative">
@@ -382,67 +504,7 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Playlist UI */}
-                <div className="pt-6 border-t border-white/10">
-                  <h4 className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest text-center mb-4">Custom Playlist</h4>
-                  
-                  <div className="flex gap-2 mb-4">
-                    <select
-                      value={selectedPresetToAdd}
-                      onChange={(e) => setSelectedPresetToAdd(e.target.value)}
-                      className="flex-1 bg-black/50 border border-white/10 rounded-2xl px-4 py-3 text-xs md:text-sm text-white appearance-none focus:outline-none focus:ring-1 focus:ring-indigo-500 truncate shadow-sm"
-                    >
-                      <option value="">Select preset to add...</option>
-                      {presetKeys.map(key => (
-                        <option key={key} value={key}>
-                          {key.replace(/-/g, ' ')}
-                        </option>
-                      ))}
-                    </select>
-                    <button 
-                      onClick={() => {
-                        if (selectedPresetToAdd && !presetPlaylist.includes(selectedPresetToAdd)) {
-                          setPresetPlaylist([...presetPlaylist, selectedPresetToAdd]);
-                        }
-                      }}
-                      className="p-3 w-[52px] h-[52px] flex items-center justify-center bg-indigo-500/20 active:bg-indigo-500/30 text-indigo-400 rounded-2xl border border-indigo-500/20 transition-colors shadow-sm"
-                      title="Add to Playlist"
-                    >
-                      <ListPlus className="w-5 h-5" />
-                    </button>
-                  </div>
-
-                  <div className="space-y-2 max-h-40 overflow-y-auto pr-2 custom-scrollbar">
-                    {presetPlaylist.length === 0 ? (
-                      <div className="bg-black/30 rounded-2xl border border-white/5 p-4 text-center">
-                        <p className="text-xs text-neutral-500 italic">Global pool active. Add presets here to limit the pool to your favorites.</p>
-                      </div>
-                    ) : (
-                      presetPlaylist.map((preset, idx) => (
-                        <div key={idx} className="flex items-center justify-between bg-black/40 px-4 py-3 rounded-2xl border border-white/5 shadow-sm">
-                          <span className="text-xs text-neutral-300 truncate pr-2 font-medium">{preset.replace(/-/g, ' ')}</span>
-                          <button 
-                            onClick={() => setPresetPlaylist(presetPlaylist.filter(p => p !== preset))}
-                            className="text-neutral-500 active:text-red-400 p-2 -mr-2 transition-colors"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                  
-                  {presetPlaylist.length > 0 && (
-                    <button
-                      onClick={() => setPresetPlaylist([])}
-                      className="mt-4 text-xs font-bold text-neutral-500 active:text-neutral-300 transition-colors w-full text-center py-2"
-                    >
-                      Clear Playlist
-                    </button>
-                  )}
-                </div>
-
-                <div className="pt-6 pb-4 flex items-start gap-3 text-indigo-300/70 text-xs">
+                <div className="pt-6 pb-4 flex items-start gap-3 text-indigo-300/70 text-xs border-t border-white/10">
                   <AlertCircle className="w-5 h-5 shrink-0" />
                   <p className="leading-relaxed">Videos are saved in WebM format. Use a free online converter to change to MP4 if needed for sharing.</p>
                 </div>
@@ -457,13 +519,32 @@ export default function App() {
             onChange={handleFileUpload}
             className="hidden"
           />
+          <input
+            type="file"
+            ref={folderInputRef}
+            // @ts-ignore
+            webkitdirectory="true"
+            directory="true"
+            multiple
+            onChange={handleFolderUpload}
+            className="hidden"
+          />
           {audioUrl && (
             <audio 
               ref={audioRef} 
               src={audioUrl} 
+              onLoadedData={() => {
+                if (isPlaying && isReady) {
+                  audioRef.current?.play().catch(console.error);
+                }
+              }}
               onEnded={() => {
-                setIsPlaying(false);
-                if (isRecording) toggleRecording();
+                if (currentTrackIndex < playlist.length - 1) {
+                  nextTrack();
+                } else {
+                  setIsPlaying(false);
+                  if (isRecording) toggleRecording();
+                }
               }}
             />
           )}
