@@ -135,7 +135,7 @@ export default function App() {
   };
 
   const handleFolderUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
+    const files = Array.from((e.target.files as FileList) || []) as File[];
     const audioFiles = files.filter(f => 
       f.type.startsWith('audio/') || 
       f.name.toLowerCase().endsWith('.mp3') || 
