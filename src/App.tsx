@@ -36,9 +36,6 @@ export default function App() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const [isReady, setIsReady] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [useSystemAudio, setUseSystemAudio] = useState(false);
-  const systemAudioStreamRef = useRef<MediaStream | null>(null);
-  const systemAudioSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
   
   const requestRef = useRef<number>();
   const sourceNodeRef = useRef<MediaElementAudioSourceNode | null>(null);
@@ -96,7 +93,7 @@ export default function App() {
 
   // Initialize AudioContext and Visualizer on first user interaction
   const initAudio = useCallback(async () => {
-    if (audioContext && isReady) return audioContext;
+    if (audioContext && isReady) return;
 
     try {
       const AudioContextClass = (window.AudioContext || (window as any).webkitAudioContext) as typeof AudioContext;
@@ -118,10 +115,8 @@ export default function App() {
         setVisualizer(viz);
       }
       setIsReady(true);
-      return ctx;
     } catch (err) {
       console.error("Failed to initialize audio context", err);
-      return null;
     }
   }, [audioContext, isReady]);
 
@@ -144,7 +139,7 @@ export default function App() {
       if (audioUrl) URL.revokeObjectURL(audioUrl);
       const newUrl = URL.createObjectURL(file);
       setAudioUrl(newUrl);
-      if (!useSystemAudio) setIsPlaying(false);
+      setIsPlaying(false);
     }
   };
 
@@ -194,7 +189,7 @@ export default function App() {
       setAudioFile(firstFile);
       if (audioUrl) URL.revokeObjectURL(audioUrl);
       setAudioUrl(URL.createObjectURL(firstFile));
-      if (!useSystemAudio) setIsPlaying(false);
+      setIsPlaying(false);
       setShowSettings(false);
     }
   };
@@ -302,33 +297,26 @@ export default function App() {
 
   // Playback Control
   const togglePlay = async () => {
-    const ctx = await initAudio();
+    await initAudio();
     
-    if (!ctx) return;
+    if (!audioRef.current || !audioContext) return;
 
-    if (ctx.state === 'suspended') {
-      await ctx.resume();
+    if (audioContext.state === 'suspended') {
+      await audioContext.resume();
     }
-
-    if (useSystemAudio) {
-      setIsPlaying(!isPlaying);
-      return;
-    }
-
-    if (!audioRef.current) return;
 
     if (!sourceNodeRef.current) {
       // Create source node once
-      sourceNodeRef.current = ctx.createMediaElementSource(audioRef.current);
+      sourceNodeRef.current = audioContext.createMediaElementSource(audioRef.current);
       
       // Create destination for recording
-      streamDestRef.current = ctx.createMediaStreamDestination();
+      streamDestRef.current = audioContext.createMediaStreamDestination();
       
       // Connect to visualizer, speakers, and recording dest
       if (visualizer) {
         visualizer.connectAudio(sourceNodeRef.current);
       }
-      sourceNodeRef.current.connect(ctx.destination);
+      sourceNodeRef.current.connect(audioContext.destination);
       sourceNodeRef.current.connect(streamDestRef.current);
     }
 
@@ -338,92 +326,6 @@ export default function App() {
       audioRef.current.play();
     }
     setIsPlaying(!isPlaying);
-  };
-
-  // System Audio Control
-  const toggleSystemAudio = async () => {
-    if (useSystemAudio) {
-      // Turn off
-      systemAudioStreamRef.current?.getTracks().forEach(t => t.stop());
-      systemAudioStreamRef.current = null;
-      if (systemAudioSourceRef.current) {
-        systemAudioSourceRef.current.disconnect();
-        systemAudioSourceRef.current = null;
-      }
-      setUseSystemAudio(false);
-      setIsPlaying(false);
-      
-      // Reconnect local file audio if exists
-      if (sourceNodeRef.current && visualizer) {
-        visualizer.connectAudio(sourceNodeRef.current);
-      }
-    } else {
-      try {
-        if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
-          alert("Tab audio capture is not supported in this browser environment.\n\nThis usually happens if:\n1. You are not using a secure context (HTTPS or localhost).\n2. You are using a mobile browser (which doesn't support tab audio capture).");
-          setUseSystemAudio(false);
-          return;
-        }
-
-        const stream = await navigator.mediaDevices.getDisplayMedia({
-          video: true,
-          audio: true
-        });
-
-        // Check if audio track exists
-        if (stream.getAudioTracks().length === 0) {
-          alert("No audio track found. Please make sure to check 'Share audio' when selecting a tab or screen.");
-          stream.getTracks().forEach(t => t.stop());
-          return;
-        }
-
-        const ctx = await initAudio();
-        
-        if (!ctx) return;
-
-        systemAudioStreamRef.current = stream;
-        systemAudioSourceRef.current = ctx.createMediaStreamSource(stream);
-        
-        if (visualizer) {
-          visualizer.connectAudio(systemAudioSourceRef.current);
-        }
-        
-        if (!streamDestRef.current) {
-          streamDestRef.current = ctx.createMediaStreamDestination();
-        }
-        
-        systemAudioSourceRef.current.connect(streamDestRef.current);
-
-        const videoTrack = stream.getVideoTracks()[0];
-        if (videoTrack) {
-          videoTrack.addEventListener('ended', () => {
-             setUseSystemAudio(false);
-             setIsPlaying(false);
-             if (systemAudioSourceRef.current) {
-                 systemAudioSourceRef.current.disconnect();
-                 systemAudioSourceRef.current = null;
-             }
-             if (sourceNodeRef.current && visualizer) {
-               visualizer.connectAudio(sourceNodeRef.current);
-             }
-          });
-        }
-
-        setUseSystemAudio(true);
-        setIsPlaying(true);
-        
-        if (audioRef.current) {
-          audioRef.current.pause();
-        }
-      } catch (err) {
-        console.error("System audio capture failed:", err);
-        // Don't alert if the user just cancelled the prompt (NotAllowedError)
-        if (err instanceof Error && err.name !== 'NotAllowedError') {
-          alert(`Could not start capture: ${err.message}`);
-        }
-        setUseSystemAudio(false);
-      }
-    }
   };
 
   // Recording Control
@@ -494,11 +396,11 @@ export default function App() {
       
       {/* Canvas Area */}
       <div className="relative flex-1 w-full bg-neutral-950 overflow-hidden">
-        {!audioFile && !useSystemAudio && (
+        {!audioFile && (
           <div className="absolute inset-0 flex flex-col items-center justify-center text-neutral-500 z-10 p-6 text-center">
             <Upload className="w-16 h-16 mb-4 opacity-30 text-indigo-400" />
             <h2 className="text-xl md:text-2xl font-semibold text-neutral-300 mb-2 tracking-tight">Milkdrop Visualizer</h2>
-            <p className="text-sm">Upload an MP3 or capture tab audio to begin.</p>
+            <p className="text-sm">Upload an MP3 to begin the experience.</p>
           </div>
         )}
         <canvas 
@@ -578,7 +480,7 @@ export default function App() {
                {/* Play/Pause */}
                <button 
                  onClick={togglePlay} 
-                 disabled={!audioFile && !useSystemAudio} 
+                 disabled={!audioFile} 
                  className="flex-1 h-[72px] md:h-[88px] flex items-center justify-center bg-indigo-500 active:bg-indigo-600 disabled:bg-neutral-800 disabled:text-neutral-600 text-white rounded-[2rem] md:rounded-[2.5rem] transition-all duration-300 ease-out shadow-[0_8px_30px_rgba(99,102,241,0.3)] active:shadow-none active:scale-95 disabled:scale-100 disabled:shadow-none border border-indigo-400/20"
                >
                  {isPlaying ? <Pause className="w-10 h-10 md:w-12 md:h-12 fill-current" /> : <Play className="w-10 h-10 md:w-12 md:h-12 fill-current ml-2" />}
@@ -594,7 +496,7 @@ export default function App() {
                </button>
 
                {/* Record */}
-               <button onClick={toggleRecording} disabled={!audioFile && !useSystemAudio} className={`flex flex-col items-center justify-center w-[64px] h-[64px] md:w-[72px] md:h-[72px] rounded-3xl transition-colors border shadow-md shrink-0 ${isRecording ? 'bg-red-500/20 text-red-400 border-red-500/30 active:bg-red-500/30 shadow-[0_0_20px_rgba(239,68,68,0.2)]' : 'bg-neutral-800 text-neutral-400 border-white/5 active:bg-neutral-700 disabled:opacity-50'}`}>
+               <button onClick={toggleRecording} disabled={!audioFile} className={`flex flex-col items-center justify-center w-[64px] h-[64px] md:w-[72px] md:h-[72px] rounded-3xl transition-colors border shadow-md shrink-0 ${isRecording ? 'bg-red-500/20 text-red-400 border-red-500/30 active:bg-red-500/30 shadow-[0_0_20px_rgba(239,68,68,0.2)]' : 'bg-neutral-800 text-neutral-400 border-white/5 active:bg-neutral-700 disabled:opacity-50'}`}>
                  {isRecording ? <StopCircle className="w-6 h-6 md:w-7 md:h-7 mb-1" /> : <Video className="w-6 h-6 md:w-7 md:h-7 mb-1" />}
                  <span className="text-[9px] font-bold uppercase tracking-wider hidden md:block">{isRecording ? 'Stop' : 'Rec'}</span>
                </button>
@@ -608,21 +510,6 @@ export default function App() {
                 {/* Audio Source / Folder */}
                 <div className="space-y-3">
                   <h4 className="text-[10px] font-bold text-neutral-500 uppercase tracking-widest text-center">Audio Source</h4>
-                  
-                  {/* System Audio Toggle */}
-                  <div className="flex items-center justify-between p-3 bg-neutral-800/50 rounded-2xl border border-white/5">
-                    <div className="flex flex-col">
-                      <span className="text-sm font-bold text-neutral-200">Capture Tab Audio</span>
-                      <span className="text-[10px] text-neutral-500">Enable "Share audio" in browser prompt</span>
-                    </div>
-                    <button 
-                       onClick={toggleSystemAudio}
-                       className={`w-11 h-6 rounded-full p-1 transition-colors shrink-0 ${useSystemAudio ? 'bg-indigo-500' : 'bg-neutral-700'}`}
-                     >
-                       <div className={`w-4 h-4 rounded-full bg-white transition-transform ${useSystemAudio ? 'translate-x-5' : 'translate-x-0'}`} />
-                     </button>
-                  </div>
-
                   <button 
                     onClick={() => folderInputRef.current?.click()}
                     className="w-full flex items-center justify-center gap-2 bg-indigo-500/10 active:bg-indigo-500/20 text-indigo-400 transition-colors px-4 py-4 rounded-2xl text-sm font-bold tracking-wide border border-indigo-500/20 shadow-sm"
@@ -765,7 +652,7 @@ export default function App() {
               ref={audioRef} 
               src={audioUrl} 
               onLoadedData={() => {
-                if (isPlaying && isReady && !useSystemAudio) {
+                if (isPlaying && isReady) {
                   audioRef.current?.play().catch(console.error);
                 }
               }}
