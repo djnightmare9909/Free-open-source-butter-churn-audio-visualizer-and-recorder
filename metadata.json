@@ -1,7 +1,9 @@
 {
   "name": "Milkdrop Visualizer",
   "description": "Free, browser-based Milkdrop visualizer with audio playback and built-in video recording. No subscriptions, no cloud—just stunning reactive visuals.",
-  "requestFramePermissions": [],
+  "requestFramePermissions": [
+    "display-capture"
+  ],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
   ]
