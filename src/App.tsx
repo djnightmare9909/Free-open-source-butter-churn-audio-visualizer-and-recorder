@@ -392,10 +392,10 @@ export default function App() {
 
 
   return (
-    <div className="h-[100dvh] w-full bg-black text-white font-sans flex flex-col overflow-hidden relative selection:bg-indigo-500/30">
+    <div className="h-[100dvh] w-full bg-black text-white font-sans flex flex-col lg:flex-row overflow-hidden relative selection:bg-indigo-500/30">
       
       {/* Canvas Area */}
-      <div className="relative flex-1 w-full bg-neutral-950 overflow-hidden">
+      <div className="relative flex-1 w-full lg:h-full bg-neutral-950 overflow-hidden">
         {!audioFile && (
           <div className="absolute inset-0 flex flex-col items-center justify-center text-neutral-500 z-10 p-6 text-center">
             <Upload className="w-16 h-16 mb-4 opacity-30 text-indigo-400" />
@@ -426,21 +426,33 @@ export default function App() {
 
       </div>
 
-      {/* Docked Control Deck - One Handed Ergonomics */}
-      <div className="w-full bg-neutral-900/95 backdrop-blur-xl border-t border-white/10 rounded-t-[2.5rem] shadow-[0_-10px_40px_rgba(0,0,0,0.7)] z-30 flex-shrink-0 transition-all duration-500 ease-[cubic-bezier(0.32,0.72,0,1)]">
-        <div className="max-w-md mx-auto w-full flex flex-col pb-[env(safe-area-inset-bottom)]">
+      {/* Docked Control Deck - One Handed Ergonomics / Sidebar on Desktop */}
+      <div className="w-full lg:w-[420px] bg-neutral-900/95 backdrop-blur-xl border-t lg:border-t-0 lg:border-l border-white/10 rounded-t-[2.5rem] lg:rounded-none shadow-[0_-10px_40px_rgba(0,0,0,0.7)] lg:shadow-[-10px_0_40px_rgba(0,0,0,0.7)] z-30 flex-shrink-0 transition-all duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] lg:flex lg:flex-col lg:h-full">
+        <div className="max-w-md lg:max-w-none mx-auto w-full flex flex-col pb-[env(safe-area-inset-bottom)] lg:pb-0 lg:flex-1 lg:overflow-y-auto custom-scrollbar">
           
-          {/* Pull Tab for Settings */}
+          {/* Pull Tab for Settings (Mobile) */}
           <button 
             onClick={() => setShowSettings(!showSettings)} 
-            className="w-full h-12 flex justify-center items-center opacity-60 hover:opacity-100 active:scale-95 transition-all"
+            className="w-full h-12 flex justify-center items-center opacity-60 hover:opacity-100 active:scale-95 transition-all lg:hidden"
             aria-label="Toggle settings"
           >
             <div className={`w-12 h-1.5 rounded-full transition-colors ${showSettings ? 'bg-indigo-500/50' : 'bg-neutral-600'}`} />
           </button>
 
+          {/* Desktop Header */}
+          <div className="hidden lg:flex items-center justify-between px-6 pt-8 pb-4">
+            <h2 className="text-lg font-bold text-white tracking-tight">Controls</h2>
+            <button 
+              onClick={() => setShowSettings(!showSettings)} 
+              className={`p-2 rounded-xl transition-colors ${showSettings ? 'bg-indigo-500/20 text-indigo-400' : 'bg-white/5 text-neutral-400 hover:text-white hover:bg-white/10'}`}
+              aria-label="Toggle settings"
+            >
+              <Settings2 className="w-5 h-5" />
+            </button>
+          </div>
+
           {/* Core Controls - Always visible */}
-          <div className="px-6 pb-8 space-y-6">
+          <div className="px-6 pb-8 lg:pb-6 space-y-6">
             
             {/* Scrubber */}
             <div className="flex flex-col items-center gap-2">
@@ -504,8 +516,8 @@ export default function App() {
           </div>
 
           {/* Expandable Settings Area */}
-          <div className={`overflow-hidden transition-all duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] ${showSettings ? 'max-h-[50vh] opacity-100' : 'max-h-0 opacity-0'}`}>
-             <div className="px-6 pb-8 space-y-6 overflow-y-auto max-h-[50vh] custom-scrollbar border-t border-white/5 pt-6 mt-[-1rem]">
+          <div className={`overflow-hidden transition-all duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] lg:flex-1 lg:flex lg:flex-col ${showSettings ? 'max-h-[50vh] lg:max-h-[1000px] opacity-100' : 'max-h-0 opacity-0'}`}>
+             <div className="px-6 pb-8 space-y-6 overflow-y-auto max-h-[50vh] lg:max-h-none custom-scrollbar border-t border-white/5 pt-6 mt-[-1rem] lg:border-t-0 lg:pt-0 lg:mt-0">
                 
                 {/* Audio Source / Folder */}
                 <div className="space-y-3">
