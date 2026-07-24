@@ -360,7 +360,7 @@ export default function App() {
     } else {
       try {
         if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
-          alert("Tab audio capture is not supported in this iframe. Please click the 'Open in new tab' button at the top right of the preview to use this feature.");
+          alert("Tab audio capture is not supported in this browser environment.\n\nThis usually happens if:\n1. You are not using a secure context (HTTPS or localhost).\n2. You are using a mobile browser (which doesn't support tab audio capture).");
           setUseSystemAudio(false);
           return;
         }
@@ -417,7 +417,11 @@ export default function App() {
         }
       } catch (err) {
         console.error("System audio capture failed:", err);
-        alert(`Could not start capture: ${err instanceof Error ? err.message : String(err)}\n\nPlease note: Some browsers block screen capture inside an embedded preview. Click the "Open in new tab" icon at the top right of this page to use this feature.`);
+        // Don't alert if the user just cancelled the prompt (NotAllowedError)
+        if (err instanceof Error && err.name !== 'NotAllowedError') {
+          alert(`Could not start capture: ${err.message}`);
+        }
+        setUseSystemAudio(false);
       }
     }
   };
